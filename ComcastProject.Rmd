@@ -1,0 +1,307 @@
+---
+title: "Comcast_Project"
+author: "Michael Amanor Odonkor"
+date: "12/24/2021"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+
+
+# Comcast Telecom Consumer Complaints (Project 2)
+### Load Libraries
+```{r loading packages , results='hide',message=FALSE,warning=FALSE}
+library(tidyverse)
+library(lubridate)
+library(zoo)
+library(ggplot2)
+library(ggfortify)
+library(scales)
+library(knitr)
+
+```
+
+
+
+# Import data into R environment.
+```{r}
+raw_data <- read.csv("/Users/Manor/Desktop/Comcast Telecom Complaints data.csv", stringsAsFactors = FALSE)
+```
+
+### Cleaning the date format
+```{r}
+raw_data$Date <-dmy(raw_data$Date)
+raw_data$Date <- as.Date(raw_data$Date)
+```
+
+### Working with sample data (removing columns we don't need)
+```{r}
+sample_data <-raw_data %>% 
+  select(-c("Ticket..","Zip.code","Filing.on.Behalf.of.Someone","Time","City"))
+
+```
+
+
+
+# Provide the trend chart for the number of complaints at monthly and daily granularity levels.
+### Daily and Monthly complaints
+```{r}
+daily_complaints <- sample_data %>%
+  mutate(Daily_Complaints = strftime(sample_data$Date,"%d")) %>% 
+  count(Daily_Complaints) %>% 
+  rename(daily_Count = "n")
+
+monthly_complaints <- sample_data %>% 
+  mutate(Monthly_Complaints = strftime(sample_data$Date,"%m")) %>% 
+  count(Monthly_Complaints) %>% 
+  rename(monthly_Count = "n")
+```
+
+### Total daily complaint graph
+```{r}
+(g1 <- ggplot(data = daily_complaints,aes(x = Daily_Complaints, y = daily_Count , group = 1, color = "orange")) + geom_line() + geom_point() + labs (x = "Days", y = "Sum of Complaints", title = "Figure 1: A graph showing the daily complaints by customers", fill = NULL  ) + geom_path()+ theme_classic() + theme(legend.position="none"))
+
+```
+
+### The top 3 days with the highest number of complaints in a month are 6th, 24th and 23rd
+
+
+
+
+
+### Total monthly complaint graph
+```{r}
+(g2 <- ggplot(data = monthly_complaints,aes(x = Monthly_Complaints, y = monthly_Count , group = 1, color = "orange")) + geom_line() + geom_point() + labs (x = "Months", y = "Sum of Complaints", title = "Figure 2 : A graph showing the monthly complaints by customers", fill = NULL  ) + geom_path()+ theme_classic() + theme(legend.position="none"))
+
+```
+
+### This chart shows that the Sum of complaints are highest in the month of June.
+
+
+
+
+
+# Provide a table with the frequency of complaint types.
+### Creating a new column with NA values
+```{r}
+sample_data <- sample_data %>%  
+  add_column(Complaint_Type = NA)
+
+```
+
+### Classifying customer complaints into  5  groups using certain keys 
+```{r}
+internet <- contains(raw_data$Customer.Complaint ,match = c("internet service","gb", "bundle","cap","mb","speed","internet"),ignore.case = TRUE)
+billing <- contains(raw_data$Customer.Complaint ,match = c("billing","charged", "charges","billed"),ignore.case = TRUE)
+service <- contains(raw_data$Customer.Complaint ,match = "service",ignore.case = TRUE)
+email <- contains(raw_data$Customer.Complaint ,match = "email",ignore.case = TRUE)
+
+```
+
+### Adding new classifications into the dataframe column as values 
+```{r}
+sample_data$Complaint_Type[internet] <- "Internet"
+sample_data$Complaint_Type[service] <- "Service" 
+sample_data$Complaint_Type[billing] <- "Billing"
+sample_data$Complaint_Type[email] <- "Email"
+sample_data$Complaint_Type[-c(internet,service,billing, email)] <- "Others"
+
+```
+
+### Frequency of Customer Complaints 
+```{r}
+Frequency_data <- data.frame(table(sample_data$Complaint_Type))
+colnames(Frequency_data) <- c("Complaint_Type", "Frequency")
+Sorted_frequency <- Frequency_data[order(-Frequency_data$Frequency),]
+knitr::kable(Sorted_frequency, "pipe", align=c("c", "c"))
+```
+
+# Which complaint types are maximum?
+### From the table with the frequency of complaint types above, we can see that the maximum complaint type is Others (779), followed by Internet, Billing, Service, and Email.
+
+
+
+
+
+## Create a new categorical variable with value as Open and Closed. Open & Pending is to be categorized as Open and Closed & Solved is to be categorized as Closed.
+### Create new column with NA values
+```{r}
+
+sample_data <- sample_data %>%  
+  add_column(New_Status = NA)
+
+```
+
+### Categorize the data based on the status of complaint 
+```{r}
+sample_data$New_Status[sample_data$Status == "Open"|sample_data$Status == "Pending"] = "Open"
+sample_data$New_Status[sample_data$Status == "Closed"|sample_data$Status == "Solved"] ="Closed"
+
+```
+
+
+
+
+# Provide state wise status of complaints in a stacked bar chart
+### Finding the count of complaints based on the state and status
+```{r}
+state_wise_status <- sample_data %>% 
+  group_by(State, New_Status) %>% 
+  summarise(Count = n()) 
+```
+
+### Plotting Chart (stacked bar chart)
+```{r}
+
+(g3 <- ggplot(data = state_wise_status, aes(x = State, y = Count, fill = New_Status)) + 
+    geom_bar(stat = "identity") +  coord_flip() + scale_fill_brewer(palette = "Dark2"))
+
+(g3 + labs(title = "Figure 3  Shows the State Wise Status of Complaints", 
+          y = "Number of Complaints", x = "States", fill = "Status"))
+```
+
+
+# Which state has the maximum complaints? 
+### State with the most complaints in descending order
+```{r}
+Maximum_complaints <- data.frame (sample_data %>% 
+                                    group_by(State) %>% 
+                                    summarise(Count = n()) %>% 
+                                    arrange(desc(Count)))
+knitr::kable(Maximum_complaints, "pipe", align=c("l", "c"))
+```
+
+### After sorting, we find out that Georgia has the most complaints with a total of 288.
+
+
+
+
+# Which state has the highest percentage of unresolved complaints?
+### State with highest percentage of unresolved complaints 
+```{r}
+Highest_unresolved_Complaints <- sample_data %>% 
+  group_by(State) %>% 
+  filter(New_Status == "Open") %>% 
+  summarise(Count = n()) %>% 
+  mutate(Percentage = formattable::percent(Count/sum(Count))) %>% 
+  arrange(desc(Percentage))
+knitr::kable(Highest_unresolved_Complaints, "pipe", align=c("l", "c","c"))
+```
+
+### The state with the highest percentage of unresolved complaints is Georgia with 15.47%.
+
+### State with highest percentage of resolved complaints
+```{r}
+Highest_resolved_Complaints <- sample_data %>% 
+  group_by(State) %>% 
+  filter(New_Status == "Closed") %>% 
+  summarise(Count = n()) %>% 
+  mutate(Percentage =formattable::percent (Count/sum(Count))) %>% 
+  arrange(desc(Percentage))
+knitr::kable(Highest_resolved_Complaints, "pipe", align=c("l", "c","c"))
+```
+
+### The state with the highest percentage of resolved complaints is Georgia with 12.19%.
+
+
+
+# Provide the percentage of complaints resolved till date, which were received through the Internet and customer care calls.
+### Resolved complaints till date based on based on how they were received
+```{r}
+Resolved_complaints_till_date <- sample_data%>% 
+  group_by(Received.Via) %>% 
+  filter(New_Status == "Closed" ) %>% 
+  summarise(Count = n()) %>% 
+  mutate(Percentage = formattable::percent(Count/sum(Count))) %>% 
+  arrange(desc(Percentage))
+```
+
+### Chart showing total complaints resolved till date  based on how they were received
+```{r}
+(g4 <- ggplot(data =Resolved_complaints_till_date, aes(x="",y=Percentage, fill = Received.Via ) ) +
+    geom_bar(width = 1, stat = "identity") + theme_classic() + coord_polar("y", start=0) + theme(axis.line = element_blank()) + theme(axis.text = element_blank()) + theme(axis.ticks = element_blank()) +
+    labs(x = NULL, y = NULL , fill = "Received.Via", title = "Figure 4 Total Complaints Resolved Till Date"   ) + geom_text(aes(label = paste0(Percentage)), position= position_stack(vjust = 0.5)))
+```
+
+### It is clear from the pie chart that the total percentage of resolved complaints received via Customer care is 50.62% and those  received via Internet is 49.38%.
+
+
+
+
+
+### Unresolved Complaints till date  based on how they were received
+```{r}
+Unresolved_complaints_till_date <- sample_data%>% 
+  group_by(Received.Via) %>% 
+  filter(New_Status == "Open" ) %>% 
+  summarise(Count = n()) %>% 
+  mutate(Percentage = formattable::percent(Count/sum(Count))) %>% 
+  arrange(desc(Percentage))
+```
+
+### Graph showing Unresolved Complaints till date  based on how they were received
+```{r}
+(g5 <- ggplot(data =Unresolved_complaints_till_date, aes(x="",y=Percentage, fill = Received.Via ) ) +
+    geom_bar(width = 1, stat = "identity") + theme_classic() + coord_polar("y", start=0) + theme(axis.line = element_blank()) + theme(axis.text = element_blank()) + theme(axis.ticks = element_blank()) +
+    labs(x = NULL, y = NULL , fill = "Received.Via", title = "Figure 5 Total Complaints Unresolved Till Date"   ) + geom_text(aes(label = paste0(Percentage)), position= position_stack(vjust = 0.5)))
+```
+
+### It is clear from the pie chart that the total percentage of unresolved complaints received via Customer care is 49.32% and those  received via Internet is 50.68%.
+
+
+
+
+
+### Total status percentage of complaints per how they were received (Internet) 
+```{r}
+internet_only <- sample_data%>% 
+  group_by(New_Status) %>% 
+  filter(Received.Via == "Internet" ) %>% 
+  summarise(Count = n()) %>% 
+  mutate(Percentage = formattable::percent(Count/sum(Count))) %>% 
+  arrange(desc(Percentage))
+```
+
+### Graph showing status percentage of total complaints per how they were received (Internet) 
+```{r}
+(g6 <- ggplot(data =internet_only, aes(x="",y=Percentage, fill = New_Status ) ) +
+    geom_bar(width = 1, stat = "identity") + theme_classic() + coord_polar("y", start=0) + theme(axis.line = element_blank()) + theme(axis.text = element_blank()) + theme(axis.ticks = element_blank()) +
+    labs(x = NULL, y = NULL , fill = "Received.Via", title = "Figure 6 Total  complaints per Received Via (Internet) "   ) + geom_text(aes(label = paste0(Percentage)), position= position_stack(vjust = 0.5)))
+```
+
+
+### Total  status percentage of complaints per how they were received (Customer Care)
+```{r}
+Customer_Care <- sample_data%>% 
+  group_by(New_Status) %>% 
+  filter(Received.Via == "Customer Care Call" ) %>% 
+  summarise(Count = n()) %>% 
+  mutate(Percentage = formattable::percent(Count/sum(Count))) %>% 
+  arrange(desc(Percentage))
+```
+
+### Graph showing Total status percentage of complaints per how they were received (Customer Care)
+```{r}
+(g7 <- ggplot(data =Customer_Care, aes(x="",y=Percentage, fill = New_Status ) ) +
+    geom_bar(width = 1, stat = "identity") + theme_classic() + coord_polar("y", start=0) + theme(axis.line = element_blank()) + theme(axis.text = element_blank()) + theme(axis.ticks = element_blank()) +
+    labs(x = NULL, y = NULL , fill = "Received.Via", title = "Figure 7 Total  complaints per Received Via (Customer Care) "   ) + geom_text(aes(label = paste0(Percentage)), position= position_stack(vjust = 0.5)))
+```
+
+
+
+# INSIGHTS
+### -The top 3 days with the higest number of complaints in a month are 6th, 24th and 23rd.
+### -The Sum of complaints are highest in the month of June.
+### -From the table with the frequency of complaint types above, we can see that the maximum complaint type is Others (779), followed by Internet, Billing, Service, and Email.
+### -Georgia has the most complaints with a total of 288.
+### -The state with the highest percentage of unresolved complaints is Georgia with 15.47%.
+### -The state with the highest percentage of resolved complaints is Georgia with 12.19%.
+### -The total percentage of resolved complaints received via Customer care is 50.62% and those received via Internet is 49.38%.
+### -The total percentage of unresolved complaints received via Customer care is 49.32% and those received via Internet is 50.68%.
+
+
+
+
